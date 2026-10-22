@@ -49,6 +49,7 @@ herdr plugin action invoke list-windows --plugin herdr-dock-grid
 
 - Markers are the source of truth. The registry is a secondary index rebuilt from markers and live panes. See [docs/design-install-order.md](docs/design-install-order.md).
 - Other plugins use the installed copy (the local path shown by `herdr plugin list`) first, and fall back to their own `src/` copy. Change this repository first when shared logic changes.
+- Connecting herdr-dock-grid is optional. Without it, each plugin still works with its own `src/dock_layout.py` copy (multiple dock workspaces and the management actions are available only from the installed copy).
 - Bump `version` in `herdr-plugin.toml` for every changed plugin.
 
 ## Requirements

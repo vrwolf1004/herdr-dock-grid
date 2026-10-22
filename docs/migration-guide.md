@@ -32,8 +32,11 @@ timekit → simple-git → talk → radio → ai-feedbag → stockpulse
 2. `herdr plugin action invoke <dock-start 동작> --plugin <id>` 실행.
 3. `herdr pane list` 로 pane 중복이 없는지, `herdr plugin action invoke list --plugin herdr-dock-grid` 로 `live` 인지 확인.
 4. 이미 떠 있는 상태에서 다시 실행해도 새 pane 이 생기지 않는지 확인.
+5. 4개가 이미 찬 상태에서 5번째 블록을 띄우면 `herdr-dock2` 에 뜨는지, 레지스트리의 `workspace_id` 가 `herdr-dock2` 의 것인지, 기존 4개와 겹치지 않는지 확인.
+6. 5번째 블록을 닫고 `reset` 을 실행한 뒤 빈 `herdr-dock2` 가 닫히고 `herdr-dock` 의 기존 블록은 그대로인지 확인. 사이드바 pane 만 남은 워크스페이스도 닫힌다.
 
 ## 플러그인별 메모
 - timekit, simple-git: `ensure_intro` 는 플러그인 쪽에 둔다.
-- talk: 10분 무활동 자동 종료가 있어 블록이 사라진다. 유지 여부는 미정.
+- talk: 10분 무활동 자동 종료를 유지한다(블록은 10분 무활동 후 사라진다).
 - simple-git: 상태 폴더 환경변수가 없으면 마커 위치가 달라질 수 있다.
+- stockpulse: 대시보드 pane 을 `dock-host` 로 감싸서 실행하고, 종료 시 `finally` 에서 `release_dock_pane` 을 호출한다. Ctrl+C 같은 정상 종료는 정리되지만, pane 을 강제로 닫으면 프로세스가 함께 끝나 `finally` 가 실행되지 않는다. 이 경우 다음 `ensure_dock_pane` 호출 때 레지스트리 항목과 표시 파일을 정리한다(이벤트 훅은 쓰지 않는다).

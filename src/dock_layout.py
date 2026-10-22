@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 import tempfile
 import time
 from contextlib import contextmanager
@@ -240,7 +241,7 @@ def save_layout_snapshot():
         workspace_id = dock_workspace_id()
         if workspace_id is None:
             raise herdr_api.HerdrError("dock workspace does not exist")
-        panes = workspace_panes(workspace_id)
+        panes = _panes_in([workspace_id])
         anchor = next((pane["pane_id"] for pane in panes if not is_sidebar(pane)), None)
         if anchor is None:
             raise herdr_api.HerdrError(f"workspace {workspace_id} has no dock pane")
@@ -299,14 +300,43 @@ def is_sidebar(pane):
     return any(name.startswith("herdr-sidebar") for name in (pane.get("tokens") or {}))
 
 
+def dock_workspaces():
+    """Return dock workspaces in order: herdr-dock, herdr-dock2, herdr-dock3, ..."""
+    found = []
+    for workspace in herdr_api.cli("workspace", "list").get("workspaces", []):
+        match = re.fullmatch(re.escape(DOCK_LABEL) + r"(\d*)", workspace.get("label") or "")
+        if not match:
+            continue
+        number = int(match.group(1)) if match.group(1) else 1
+        if number >= 2 or not match.group(1):
+            found.append((number, workspace))
+    return [workspace for _, workspace in sorted(found, key=lambda item: item[0])]
+
+
+def dock_workspace_ids():
+    return [workspace["workspace_id"] for workspace in dock_workspaces()]
+
+
 def dock_workspace_id():
-    workspaces = herdr_api.cli("workspace", "list").get("workspaces", [])
-    return next((workspace["workspace_id"] for workspace in workspaces if workspace.get("label") == DOCK_LABEL), None)
+    ids = dock_workspace_ids()
+    return ids[0] if ids else None
+
+
+def _next_workspace_label(workspaces):
+    used = {workspace.get("label") for workspace in workspaces}
+    number = 2
+    while f"{DOCK_LABEL}{number}" in used:
+        number += 1
+    return f"{DOCK_LABEL}{number}"
+
+
+def _panes_in(workspace_ids):
+    wanted = set(workspace_ids)
+    return [pane for pane in herdr_api.cli("pane", "list").get("panes", []) if pane["workspace_id"] in wanted]
 
 
 def _live_pane_ids():
-    workspace_id = dock_workspace_id()
-    return {pane["pane_id"] for pane in workspace_panes(workspace_id)} if workspace_id else set()
+    return {pane["pane_id"] for pane in _panes_in(dock_workspace_ids())}
 
 
 def _registry_claimed_panes(registry, own):
@@ -317,8 +347,8 @@ def _registry_claimed_panes(registry, own):
     }
 
 
-def _reconcile_registry(folder, registry, workspace_id, panes):
-    valid_panes = {pane["pane_id"] for pane in panes}
+def _reconcile_registry(folder, registry, panes):
+    pane_workspaces = {pane["pane_id"]: pane["workspace_id"] for pane in panes}
     owners = set()
     changed = False
     for key in sorted(registry["docks"]):
@@ -326,8 +356,8 @@ def _reconcile_registry(folder, registry, workspace_id, panes):
         dock = dock if isinstance(dock, dict) else {}
         pane_id = dock.get("pane_id")
         if (
-            dock.get("workspace_id") != workspace_id
-            or pane_id not in valid_panes
+            pane_id not in pane_workspaces
+            or dock.get("workspace_id") != pane_workspaces[pane_id]
             or pane_id in owners
             or read_dock_pane(folder, key) != pane_id
         ):
@@ -338,16 +368,36 @@ def _reconcile_registry(folder, registry, workspace_id, panes):
     return changed
 
 
-def _migrate_legacy_markers(folder, registry, workspace_id, panes):
-    live_panes = {pane["pane_id"] for pane in panes}
+def _remove_dead_markers(folder, panes):
+    """Remove markers whose pane is gone. Recent markers are kept: a legacy plugin may have just split its pane."""
+    if not panes:
+        return False
+    live = {pane["pane_id"] for pane in panes}
+    removed = False
+    for key in dock_marker_keys(folder):
+        pane_id = read_dock_pane(folder, key)
+        if not pane_id or pane_id in live:
+            continue
+        try:
+            age = time.time() - os.path.getmtime(dock_marker(folder, key))
+        except FileNotFoundError:
+            continue
+        if age >= DOCK_MARKER_STALE_SECONDS:
+            remove_dock_marker(folder, key)
+            removed = True
+    return removed
+
+
+def _migrate_legacy_markers(folder, registry, panes):
+    pane_workspaces = {pane["pane_id"]: pane["workspace_id"] for pane in panes}
     claimed = _registry_claimed_panes(registry, None)
     changed = False
     for key in dock_marker_keys(folder):
         pane_id = read_dock_pane(folder, key)
-        if not pane_id or pane_id not in live_panes or pane_id in claimed:
+        if not pane_id or pane_id not in pane_workspaces or pane_id in claimed:
             continue
         registry["docks"][key] = {
-            "workspace_id": workspace_id,
+            "workspace_id": pane_workspaces[pane_id],
             "pane_id": pane_id,
             "updated_at": time.time(),
         }
@@ -357,14 +407,14 @@ def _migrate_legacy_markers(folder, registry, workspace_id, panes):
 
 
 def reconcile_dock_state():
-    """Rebuild the registry from valid live dock markers."""
+    """Rebuild the registry from valid live dock markers across all dock workspaces."""
     folder = plugins_folder()
     with registry_lock(folder):
         registry = load_registry(folder)
-        workspace_id = dock_workspace_id()
-        panes = workspace_panes(workspace_id) if workspace_id else []
-        changed = _reconcile_registry(folder, registry, workspace_id, panes)
-        changed = _migrate_legacy_markers(folder, registry, workspace_id, panes) or changed
+        panes = _panes_in(dock_workspace_ids())
+        changed = _reconcile_registry(folder, registry, panes)
+        _remove_dead_markers(folder, panes)
+        changed = _migrate_legacy_markers(folder, registry, panes) or changed
         if changed:
             write_registry(folder, registry)
         return registry["docks"].copy()
@@ -411,39 +461,59 @@ def split_for_layout_policy(policy, anchor, cwd):
     raise herdr_api.HerdrError(f"unsupported layout policy {policy!r}")
 
 
+def _create_dock_workspace(label, folder):
+    created = herdr_api.cli("workspace", "create", "--label", label, "--cwd", folder, "--no-focus")
+    return {"workspace_id": created["workspace"]["workspace_id"], "label": label}
+
+
 def ensure_dock_pane(key, cwd):
     """Allocate or recover the pane assigned to a dock plugin."""
     _validate_key(key)
     folder = plugins_folder()
     with registry_lock(folder):
         registry = load_registry(folder)
-        workspace_id = dock_workspace_id()
-        if workspace_id is None:
-            created = herdr_api.cli("workspace", "create", "--label", DOCK_LABEL, "--cwd", folder, "--no-focus")
-            workspace_id = created["workspace"]["workspace_id"]
+        workspaces = dock_workspaces()
+        if not workspaces:
+            workspaces = [_create_dock_workspace(DOCK_LABEL, folder)]
 
-        panes = workspace_panes(workspace_id)
-        changed = _reconcile_registry(folder, registry, workspace_id, panes)
-        changed = _migrate_legacy_markers(folder, registry, workspace_id, panes) or changed
+        panes = _panes_in([workspace["workspace_id"] for workspace in workspaces])
+        changed = _reconcile_registry(folder, registry, panes)
+        _remove_dead_markers(folder, panes)
+        changed = _migrate_legacy_markers(folder, registry, panes) or changed
         current = registry["docks"].get(key)
         if current:
             if changed:
                 write_registry(folder, registry)
-            return workspace_id, current["pane_id"]
+            return current["workspace_id"], current["pane_id"]
 
         write_dock_marker(folder, key, "")
         try:
             policy = layout_policy(registry)
+            max_docks = LAYOUT_POLICIES[policy]["max_docks"]
             claimed = _registry_claimed_panes(registry, key) | claimed_dock_panes(folder, key)
             agent_panes = {agent["pane_id"] for agent in herdr_api.cli("agent", "list").get("agents", [])}
-            pane_id = pick_pane(panes, agent_panes, claimed)
-            if pane_id is None:
-                if len(registry["docks"]) >= LAYOUT_POLICIES[policy]["max_docks"]:
-                    raise herdr_api.HerdrError(f"dock layout policy {policy} has no available slots")
-                anchor = next((pane["pane_id"] for pane in panes if not is_sidebar(pane)), None)
-                if anchor is None:
+            workspace_id = pane_id = None
+            for workspace in workspaces:
+                candidate = workspace["workspace_id"]
+                workspace_panes_ = [pane for pane in panes if pane["workspace_id"] == candidate]
+                pane_id = pick_pane(workspace_panes_, agent_panes, claimed)
+                if pane_id is None:
+                    used = sum(
+                        1 for name, dock in registry["docks"].items()
+                        if name != key and dock.get("workspace_id") == candidate
+                    )
+                    anchor = next((pane["pane_id"] for pane in workspace_panes_ if not is_sidebar(pane)), None)
+                    if used >= max_docks or anchor is None:
+                        continue
+                    pane_id = split_for_layout_policy(policy, anchor, cwd)
+                workspace_id = candidate
+                break
+            if workspace_id is None:
+                created = _create_dock_workspace(_next_workspace_label(workspaces), folder)
+                workspace_id = created["workspace_id"]
+                pane_id = pick_pane(_panes_in([workspace_id]), agent_panes, claimed)
+                if pane_id is None:
                     raise herdr_api.HerdrError(f"workspace {workspace_id} has no pane")
-                pane_id = split_for_layout_policy(policy, anchor, cwd)
             registry["docks"][key] = {
                 "workspace_id": workspace_id,
                 "pane_id": pane_id,
@@ -475,23 +545,49 @@ def list_docks():
     folder = plugins_folder()
     with registry_lock(folder):
         registry = load_registry(folder)
-        live = _live_pane_ids()
+        workspaces = dock_workspaces()
+        labels = {workspace["workspace_id"]: workspace.get("label") for workspace in workspaces}
+        pane_workspaces = {
+            pane["pane_id"]: pane["workspace_id"] for pane in _panes_in(list(labels))
+        }
         keys = set(dock_marker_keys(folder)) | set(registry["docks"]) | set(registry["registrations"])
         docks = []
         for key in sorted(keys):
             pane_id = read_dock_pane(folder, key)
+            workspace_id = pane_workspaces.get(pane_id)
             docks.append({
                 "key": key,
                 "pane_id": pane_id or None,
-                "live": bool(pane_id) and pane_id in live,
+                "workspace_id": workspace_id,
+                "workspace": labels.get(workspace_id),
+                "live": workspace_id is not None,
                 "registered": key in registry["registrations"],
                 "definition": registry["registrations"].get(key, {}),
             })
         return docks
 
 
+def _close_empty_extra_workspaces(folder, registry):
+    """Close herdr-dock2 and later workspaces that hold no claimed, labeled, tokened or agent panes."""
+    workspaces = dock_workspaces()[1:]
+    if not workspaces:
+        return []
+    claimed = _registry_claimed_panes(registry, None) | claimed_dock_panes(folder, None)
+    agent_panes = {agent["pane_id"] for agent in herdr_api.cli("agent", "list").get("agents", [])}
+    closed = []
+    for workspace in workspaces:
+        workspace_id = workspace["workspace_id"]
+        panes = [pane for pane in _panes_in([workspace_id]) if not is_sidebar(pane)]
+        if all(pick_pane([pane], agent_panes, claimed) for pane in panes):
+            herdr_api.cli("workspace", "close", workspace_id)
+            closed.append(workspace_id)
+    return closed
+
+
 def reset_dock_state():
-    """Drop allocations and markers whose pane is gone. Registrations and live panes are kept."""
+    """Drop allocations and markers whose pane is gone, and close empty herdr-dockN (N>=2) workspaces.
+
+    Registrations and live panes are kept. Returns the keys that were removed."""
     folder = plugins_folder()
     removed = []
     with registry_lock(folder):
@@ -506,4 +602,5 @@ def reset_dock_state():
             if registry["docks"][key].get("pane_id") not in live:
                 del registry["docks"][key]
         write_registry(folder, registry)
+        _close_empty_extra_workspaces(folder, registry)
     return sorted(removed)

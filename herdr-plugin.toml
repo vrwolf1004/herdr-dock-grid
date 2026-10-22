@@ -1,6 +1,6 @@
 id = "herdr-dock-grid"
 name = "herdr-dock-grid"
-version = "0.6.1"
+version = "0.7.1"
 min_herdr_version = "0.9.0"
 platforms = ["windows", "linux", "macos"]
 description = "Shared 2x2 pane grid and slot rules for the herdr-dock workspace used by herdr plugins"

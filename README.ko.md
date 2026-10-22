@@ -48,6 +48,7 @@ herdr plugin action invoke list-windows --plugin herdr-dock-grid
 
 - marker가 정본입니다. 레지스트리는 marker와 실제 pane에서 재구성되는 보조 인덱스입니다. 자세한 내용은 [docs/design-install-order.md](docs/design-install-order.md)를 참고하세요.
 - 다른 플러그인은 설치본(`herdr plugin list`에 보이는 local 경로)을 우선 쓰고, 없으면 자기 `src/` 복사본을 씁니다. 공용 로직을 바꿀 때는 이 저장소를 먼저 고칩니다.
+- herdr-dock-grid 연결은 선택입니다. 설치되어 있지 않아도 각 플러그인의 `src/dock_layout.py` 복사본으로 동작합니다(다중 워크스페이스와 관리 기능은 설치본에서만 쓸 수 있습니다).
 - 바뀐 플러그인은 `herdr-plugin.toml`의 version을 올립니다.
 
 ## 요구 사항
