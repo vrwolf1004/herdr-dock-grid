@@ -2,88 +2,87 @@
 
 [English](README.md) | [한국어](README.ko.md) | [**Русский**](README.ru.md) | [Français](README.fr.md) | [Español](README.es.md) | [Deutsch](README.de.md) | [日本語](README.ja.md)
 
-Languages: English (default) · Korean · Russian · French · Spanish · German · Japanese (documentation only; no UI)
+Языки: английский (по умолчанию) · корейский · русский · французский · испанский · немецкий · японский (только документация; интерфейса нет)
 
-Shared pane allocation and state management for the `herdr-dock` workspace used by herdr plugins.
-Dock plugins do not need their own slot rules: this plugin keeps the layout policy, the occupancy state, and the cleanup logic in one place.
+Общее управление размещением панелей и состоянием для рабочего пространства `herdr-dock`, которое используют плагины herdr. Плагинам дока больше не нужны собственные правила размещения: этот плагин хранит политику раскладки, состояние занятости и логику очистки в одном месте.
 
-## Structure
+## Структура
 
-- `src/dock_layout.py`: `*.dock` markers (source of truth), the registry (`herdr-dock-grid.json`), atomic locking, layout policy, snapshots, and the management API
-- `src/dock_cli.py`: management commands (`list`, `status`, `reconcile`, `reset`, `snapshot`, `policy`)
-- `src/herdr_api.py`: herdr CLI/socket calls and lookup of the installed plugin path
+- `src/dock_layout.py`: маркеры `*.dock` (источник истины), реестр (`herdr-dock-grid.json`), атомарная блокировка, политика раскладки, снимки и API управления
+- `src/dock_cli.py`: команды управления (`list`, `status`, `reconcile`, `reset`, `snapshot`, `policy`)
+- `src/herdr_api.py`: вызовы herdr CLI/сокета и поиск пути установленного плагина
 
 ## API (`dock_layout`)
 
-| Function | Description |
+| Функция | Описание |
 | --- | --- |
-| `ensure_dock_pane(key, cwd)` | Get a dock pane and return `(workspace_id, pane_id)`. Returns the existing pane if already held |
-| `release_dock_pane(key)` | Release the allocation and marker (the pane itself is not touched) |
-| `register_dock(key, ...)` | Declare the title, default position, minimum size, and entrypoint |
-| `reconcile_dock_state()` | Rebuild the registry from markers and live panes |
-| `list_docks()` | Report whether each dock's pane is alive (read-only) |
-| `reset_dock_state()` | Clean up markers and allocations whose pane is gone |
-| `get_layout_policy()` / `set_layout_policy()` | Layout policy (currently `grid-2x2`, up to 4 slots) |
-| `save_layout_snapshot()` / `get_layout_snapshot()` | Save and read the pane topology snapshot |
+| `ensure_dock_pane(key, cwd)` | Получает панель дока и возвращает `(workspace_id, pane_id)`. Если панель уже закреплена, возвращает её |
+| `release_dock_pane(key)` | Освобождает закрепление и маркер (сама панель не трогается) |
+| `register_dock(key, ...)` | Объявляет заголовок, позицию по умолчанию, минимальный размер и точку входа |
+| `reconcile_dock_state()` | Пересобирает реестр по маркерам и живым панелям |
+| `list_docks()` | Показывает, жива ли панель каждого дока (только чтение) |
+| `reset_dock_state()` | Очищает маркеры и закрепления, у которых панель исчезла |
+| `get_layout_policy()` / `set_layout_policy()` | Политика раскладки (сейчас `grid-2x2`, до 4 мест) |
+| `save_layout_snapshot()` / `get_layout_snapshot()` | Сохраняет и читает топологию панелей |
 
-## Installation
+## Установка
 
 ```sh
 herdr plugin install vrwolf1004/herdr-dock-grid
 ```
 
-## Actions
+## Действия
 
-| Action | What it does |
+| Действие | Что делает |
 | --- | --- |
-| `list` | List docks and whether their panes are alive |
-| `reset` | Clean up stale docks |
-| `snapshot` | Save the current layout snapshot |
+| `list` | Показывает доки и живы ли их панели |
+| `reset` | Очищает устаревшие доки |
+| `snapshot` | Сохраняет текущий снимок раскладки |
 
-On Windows, append `-windows` to each action ID. Example:
+В Windows добавьте `-windows` к ID действия. Пример:
 
 ```sh
 herdr plugin action invoke list-windows --plugin herdr-dock-grid
 ```
 
-## Rules
+## Правила
 
-- Markers are the source of truth. The registry is a secondary index rebuilt from markers and live panes. See [docs/design-install-order.md](docs/design-install-order.md).
-- Other plugins use the installed copy (the local path shown by `herdr plugin list`) first, and fall back to their own `src/` copy. Change this repository first when shared logic changes.
-- Connecting herdr-dock-grid is optional. Without it, each plugin still works with its own `src/dock_layout.py` copy (multiple dock workspaces and the management actions are available only from the installed copy).
-- When a workspace has 4 blocks, the next block goes to `herdr-dock2`, then `herdr-dock3`, and so on. Empty `herdr-dockN` (N ≥ 2) workspaces are closed by `reset`, not by release. See [docs/design-multi-dock.md](docs/design-multi-dock.md).
-- Bump `version` in `herdr-plugin.toml` for every changed plugin.
+- Маркеры — источник истины. Реестр — вспомогательный индекс, который пересобирается по маркерам и живым панелям. См. [docs/design-install-order.md](docs/design-install-order.md).
+- Другие плагины сначала используют установленную копию (локальный путь из `herdr plugin list`), а если её нет — свою копию в `src/`. Когда меняется общая логика, сначала меняйте этот репозиторий.
+- Подключение herdr-dock-grid необязательно. Без него каждый плагин работает со своей копией `src/dock_layout.py` (несколько рабочих пространств дока и действия управления доступны только из установленной копии).
+- Когда в рабочем пространстве 4 блока, следующий блок идёт в `herdr-dock2`, затем в `herdr-dock3` и так далее. Пустые `herdr-dockN` (N ≥ 2) закрывает `reset`, а не release. См. [docs/design-multi-dock.md](docs/design-multi-dock.md).
+- Увеличивайте `version` в `herdr-plugin.toml` для каждого изменённого плагина.
 
-## Language
+## Язык
 
-- This plugin has no language setting. Its CLI output and messages are in English.
-- Each plugin chooses its own language with an environment variable, `HERDR_<NAME>_LANG` (for example `HERDR_TALK_LANG=ko`, `HERDR_TIMEKIT_LANG=ko`). Plugin config files can also set `lang`.
-- Multi-language support for this plugin is not planned yet. If needed, record it in [docs/common-todo.md](docs/common-todo.md).
+- В этом плагине нет настройки языка. Вывод CLI и сообщения на английском.
+- Каждый плагин выбирает язык переменной окружения `HERDR_<NAME>_LANG` (например, `HERDR_TALK_LANG=ko`). Файлы конфигурации плагинов тоже могут задавать `lang`.
+- Многоязычная поддержка этого плагина пока не запланирована. Если понадобится, запишите в [docs/common-todo.md](docs/common-todo.md).
 
-## Requirements
+## Требования
 
-- herdr 0.9.0 or later
-- Windows, Linux, or macOS
-- Python 3.9 or later
+- herdr 0.9.0 или новее
+- Windows, Linux или macOS
+- Python 3.9 или новее
 
-## Development
+## Разработка
 
 ```sh
 python -m unittest discover -s tests -q
 ```
 
-Status and remaining work: [docs/todo.md](docs/todo.md). Restoring the layout is on hold because herdr has no whole-topology setter.
+Состояние и оставшаяся работа: [docs/todo.md](docs/todo.md). Восстановление раскладки отложено, потому что в herdr нет установщика всей топологии.
 
-## Documentation
+## Документация
 
-- [docs/design-install-order.md](docs/design-install-order.md): install and start order, marker-based rules
-- [docs/design-multi-dock.md](docs/design-multi-dock.md): multiple dock workspaces
-- [docs/migration-guide.md](docs/migration-guide.md): how to move each plugin to this module
-- [docs/common-todo.md](docs/common-todo.md): decisions and work shared across plugins
-- [docs/todo.md](docs/todo.md): status of this plugin
+- [docs/design-install-order.md](docs/design-install-order.md): порядок установки и запуска, правила на основе маркеров
+- [docs/design-multi-dock.md](docs/design-multi-dock.md): несколько рабочих пространств дока
+- [docs/migration-guide.md](docs/migration-guide.md): как перевести каждый плагин на этот модуль
+- [docs/common-todo.md](docs/common-todo.md): решения и общая работа плагинов
+- [docs/todo.md](docs/todo.md): состояние этого плагина
 
-## Support the project
+## Поддержать проект
 
-If this project is useful to you, consider buying the developer a coffee.
+Если проект вам полезен, угостите разработчика чашкой кофе.
 
 [![Ko-fi](https://img.shields.io/badge/Ko--fi-Support-FF5E5B?style=for-the-badge&logo=buymeacoffee&logoColor=white)](https://ko-fi.com/dev_ohyt)
