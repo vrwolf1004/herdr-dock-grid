@@ -83,6 +83,14 @@ def dock_marker_keys(folder):
         ]
 
 
+def wait_for_earlier(folder, own):
+    """Legacy entry point kept for plugins that call it. Waits for alphabetically earlier docks that are still claiming."""
+    earlier = [key for key in dock_marker_keys(folder) if key < own]
+    deadline = time.monotonic() + DOCK_WAIT_SECONDS
+    while any(dock_starting(folder, key) for key in earlier) and time.monotonic() < deadline:
+        time.sleep(0.2)
+
+
 def claimed_dock_panes(folder, own):
     claimed = set()
     for key in dock_marker_keys(folder):
@@ -296,16 +304,29 @@ def dock_workspace_id():
     return next((workspace["workspace_id"] for workspace in workspaces if workspace.get("label") == DOCK_LABEL), None)
 
 
+def _live_pane_ids():
+    workspace_id = dock_workspace_id()
+    return {pane["pane_id"] for pane in workspace_panes(workspace_id)} if workspace_id else set()
+
+
+def _registry_claimed_panes(registry, own):
+    return {
+        dock["pane_id"]
+        for key, dock in registry["docks"].items()
+        if key != own and isinstance(dock, dict) and dock.get("pane_id")
+    }
+
+
 def _reconcile_registry(folder, registry, workspace_id, panes):
     valid_panes = {pane["pane_id"] for pane in panes}
-    owners = {}
+    owners = set()
     changed = False
-    for key in sorted(list(registry["docks"])):
+    for key in sorted(registry["docks"]):
         dock = registry["docks"][key]
-        pane_id = dock.get("pane_id") if isinstance(dock, dict) else None
-        workspace = dock.get("workspace_id") if isinstance(dock, dict) else None
+        dock = dock if isinstance(dock, dict) else {}
+        pane_id = dock.get("pane_id")
         if (
-            workspace != workspace_id
+            dock.get("workspace_id") != workspace_id
             or pane_id not in valid_panes
             or pane_id in owners
             or read_dock_pane(folder, key) != pane_id
@@ -313,7 +334,7 @@ def _reconcile_registry(folder, registry, workspace_id, panes):
             del registry["docks"][key]
             changed = True
             continue
-        owners[pane_id] = key
+        owners.add(pane_id)
     return changed
 
 
@@ -384,16 +405,8 @@ def pick_pane(panes, agent_panes, claimed):
     return free[0] if free else None
 
 
-def _registry_claimed_panes(registry, own):
-    return {
-        dock["pane_id"]
-        for key, dock in registry["docks"].items()
-        if key != own and isinstance(dock, dict) and dock.get("pane_id")
-    }
-
-
 def split_for_layout_policy(policy, anchor, cwd):
-    if policy == "grid-2x2":
+    if policy == DEFAULT_LAYOUT_POLICY:
         return grid_split(anchor, cwd)
     raise herdr_api.HerdrError(f"unsupported layout policy {policy!r}")
 
@@ -462,8 +475,7 @@ def list_docks():
     folder = plugins_folder()
     with registry_lock(folder):
         registry = load_registry(folder)
-        workspace_id = dock_workspace_id()
-        live = {pane["pane_id"] for pane in workspace_panes(workspace_id)} if workspace_id else set()
+        live = _live_pane_ids()
         keys = set(dock_marker_keys(folder)) | set(registry["docks"]) | set(registry["registrations"])
         docks = []
         for key in sorted(keys):
@@ -484,8 +496,7 @@ def reset_dock_state():
     removed = []
     with registry_lock(folder):
         registry = load_registry(folder)
-        workspace_id = dock_workspace_id()
-        live = {pane["pane_id"] for pane in workspace_panes(workspace_id)} if workspace_id else set()
+        live = _live_pane_ids()
         for key in dock_marker_keys(folder):
             pane_id = read_dock_pane(folder, key)
             if pane_id and pane_id not in live:

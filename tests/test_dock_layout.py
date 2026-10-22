@@ -169,6 +169,24 @@ class DockLayoutTests(unittest.TestCase):
             self.assertEqual(json.load(file)["docks"], {})
 
 
+class LegacyApiTests(unittest.TestCase):
+    # 설치본을 우선 로드하는 다른 플러그인이 호출하는 이름. 지우면 해당 플러그인이 시작 시 실패한다.
+    LEGACY_NAMES = (
+        "plugins_folder", "wait_for_earlier", "write_dock_marker", "remove_dock_marker",
+        "read_dock_pane", "claimed_dock_panes", "grid_split", "dock_workspace_id",
+        "workspace_panes", "is_sidebar", "ensure_dock_pane", "pick_pane", "dock_starting",
+    )
+
+    def test_legacy_names_exist(self):
+        missing = [name for name in self.LEGACY_NAMES if not hasattr(dock_layout, name)]
+        self.assertEqual(missing, [])
+
+    def test_wait_for_earlier_returns_when_nothing_is_starting(self):
+        with tempfile.TemporaryDirectory() as folder:
+            dock_layout.write_dock_marker(folder, "a-plugin", "pane")
+            dock_layout.wait_for_earlier(folder, "b-plugin")
+
+
 class DockOperationTests(unittest.TestCase):
     setUp = DockLayoutTests.setUp
 

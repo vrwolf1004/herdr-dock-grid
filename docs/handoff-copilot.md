@@ -36,9 +36,10 @@ herdr-dock-grid 가 설치되어 있으면 그 원본을 쓰고, 없으면 각 p
 4. herdr 플러그인끼리 모듈을 공유하지 않는다는 원칙은 그대로다. 설치본 참조는 `herdr plugin list` 에 경로가 보이는 local 설치에만 된다.
 
 ## 남은 일 (우선순위 순)
-1. **실제 herdr 테스트**: herdr-dock-grid 를 `herdr plugin link` 로 연결한 상태와 아닌 상태 두 가지에서 timekit, simple-git, talk 의 dock-start 를 실행해 자리가 겹치지 않는지 확인.
-2. **커밋**: 네 저장소 모두 변경 상태. 확인 후 커밋하고 herdr-dock-grid 는 origin 에 푸시.
-3. **radio, ai-feedbag, stockpulse 이전**: 아직 옛 방식(형제 상태 폴더 `pane.id` 찜하기) 또는 규칙 없음. 공용 모듈로 옮기고 각자 테스트.
+완료: 레지스트리/락/마커 우선 정합, 배치 정책, 레이아웃 스냅샷 저장·조회, `list`/`reset`/`snapshot` 동작과 CLI(`src/dock_cli.py`), 한영 README, 실제 herdr 확인(timekit, simple-git, talk).
+1. **다른 플러그인 이전**: timekit, simple-git, ai-feedbag, radio, stockpulse 는 아직 옛 방식(`wait_for_earlier`, `write_dock_marker`, `claimed_dock_panes`, `grid_split`, 자체 `pane.id`)이다. 공용 `ensure_dock_pane()` / `release_dock_pane()` 으로 옮기고 각자 테스트. 이 저장소 밖 작업이며 Claude 가 맡는다. 호환을 위해 `wait_for_earlier` 는 공용 모듈에 남겨 두었다.
+2. **레이아웃 복원**: herdr 에 전체 배치 설정 API 가 없어 보류. 스냅샷 저장·조회만 가능.
+3. **프로토콜 버전 불일치 경고**: 옛 복사본의 동작을 확인한 뒤 결정.
 4. **소개 칸(`ensure_intro`)**: timekit, simple-git 에만 있다. 공용 모듈에는 넣지 않기로 했다. 소개 내용은 plugin 별로 둔다.
 5. **GitHub 설치본 경로**: `herdr plugin list` 가 GitHub 설치본의 폴더를 보여 주지 않는다. 이 경우 복사본으로 동작한다. 실제 설치본 경로를 찾는 방법을 확인할 것.
 
