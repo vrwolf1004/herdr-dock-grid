@@ -11,8 +11,11 @@ occupancy state, and the cleanup logic in one place.
 ## Structure
 
 - `src/dock_layout.py`: `*.dock` markers (source of truth), the registry (`herdr-dock-grid.json`), atomic locking, layout policy, snapshots, and management API
+  - Read-only calls (`list_docks`, `save_layout_snapshot`, `get_layout_snapshot`) ask herdr outside the registry lock. `ensure_dock_pane`, `reset_dock_state`, and `reconcile_dock_state` still ask herdr while holding the lock, because they must act on the same pane list they check.
 - `src/dock_cli.py`: management commands (`list`, `status`, `reconcile`, `reset`, `snapshot`, `policy`)
 - `src/herdr_api.py`: herdr CLI/socket calls and installed-plugin path lookup
+  - CLI calls time out after 10 seconds by default. Set `HERDR_CLI_TIMEOUT_SECONDS` to change it. A value that is not a number, or is 0 or less, falls back to 10 seconds.
+  - When a call times out, a `check=True` call raises `HerdrError` ("no response within N s"), and a `check=False` call returns `None`. If herdr does not answer for a long time, expect this error rather than a hang.
 
 ## API (`dock_layout`)
 
@@ -51,6 +54,7 @@ herdr plugin action invoke list-windows --plugin herdr-dock-grid
 
 - Markers are the source of truth. The registry is a secondary index rebuilt from markers and live panes. See [docs/design-install-order.md](docs/design-install-order.md).
 - Other plugins use the installed copy (the local path shown by `herdr plugin list`) first, and fall back to their own `src/` copy. Change this repository first when shared logic changes.
+- To check the copies against this repository, run `python tools/check_copies.py`. It prints same, different, or missing for each copy and exits with 0 only when all match.
 - Connecting herdr-dock-grid is optional. Without it, each plugin still works with its own `src/dock_layout.py` copy (multiple dock workspaces and the management actions are available only from the installed copy).
 - When a workspace has 4 blocks, the next block goes to `herdr-dock2`, then `herdr-dock3`, and so on. Empty `herdr-dockN` (N ≥ 2) workspaces are closed by `reset`, not by release. See [docs/design-multi-dock.md](docs/design-multi-dock.md).
 - Bump `version` in `herdr-plugin.toml` for every changed plugin.

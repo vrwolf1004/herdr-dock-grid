@@ -10,8 +10,11 @@ herdr 플러그인들이 공용 `herdr-dock` 워크스페이스에서 쓰는 pan
 ## 구성
 
 - `src/dock_layout.py`: `*.dock` marker(정본), 레지스트리(`herdr-dock-grid.json`), 원자적 잠금, 레이아웃 정책, 스냅샷, 조작 API
+  - 조회만 하는 호출(`list_docks`, `save_layout_snapshot`, `get_layout_snapshot`)은 herdr에 묻는 부분을 레지스트리 잠금 밖에서 합니다. `ensure_dock_pane`, `reset_dock_state`, `reconcile_dock_state`는 확인하는 pane 목록과 같은 순간의 목록이 필요해서 잠금을 쥔 채 herdr에 묻습니다.
 - `src/dock_cli.py`: 관리 명령 (`list`, `status`, `reconcile`, `reset`, `snapshot`, `policy`)
 - `src/herdr_api.py`: herdr CLI/socket 호출, 설치된 플러그인 경로 탐색
+  - CLI 호출은 기본 10초가 지나면 제한 시간에 걸립니다. 환경 변수 `HERDR_CLI_TIMEOUT_SECONDS`로 바꿀 수 있습니다. 숫자가 아니거나 0 이하면 10초를 씁니다.
+  - 제한 시간이 지나면 `check=True` 호출은 `HerdrError`("no response within N s")를 내고, `check=False` 호출은 `None`을 돌려줍니다. herdr가 오래 응답하지 않으면 멈추는 대신 이 오류가 납니다.
 
 ## API (`dock_layout`)
 
@@ -50,6 +53,7 @@ herdr plugin action invoke list-windows --plugin herdr-dock-grid
 
 - marker가 정본입니다. 레지스트리는 marker와 실제 pane에서 재구성되는 보조 인덱스입니다. 자세한 내용은 [docs/design-install-order.md](docs/design-install-order.md)를 참고하세요.
 - 다른 플러그인은 설치본(`herdr plugin list`에 보이는 local 경로)을 우선 쓰고, 없으면 자기 `src/` 복사본을 씁니다. 공용 로직을 바꿀 때는 이 저장소를 먼저 고칩니다.
+- 복사본이 이 저장소와 같은지 확인하려면 `python tools/check_copies.py`를 실행합니다. 복사본마다 같음, 다름, 없음을 출력하며, 모두 같을 때만 종료 코드 0을 돌려줍니다.
 - herdr-dock-grid 연결은 선택입니다. 설치되어 있지 않아도 각 플러그인의 `src/dock_layout.py` 복사본으로 동작합니다(다중 워크스페이스와 관리 기능은 설치본에서만 쓸 수 있습니다).
 - 블록이 4개 차면 다음 블록은 `herdr-dock2`, 그다음은 `herdr-dock3` 순서로 배치합니다. 빈 `herdr-dockN`(N ≥ 2)은 release 가 아니라 `reset` 에서 닫습니다. 자세한 내용은 [docs/design-multi-dock.md](docs/design-multi-dock.md)를 참고하세요.
 - 바뀐 플러그인은 `herdr-plugin.toml`의 version을 올립니다.

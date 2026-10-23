@@ -42,9 +42,9 @@
 ## 추가 개선 (진행)
 
 - [x] **플러그인 복사본을 0.7.0 원본에 맞춤**: timekit, simple-git, talk, radio, ai-feedbag, stockpulse 의 `src/dock_layout.py`, `src/herdr_api.py` 를 grid 원본과 같게 맞췄다. 원본(herdr-dock-grid)은 수정하지 않았다(Copilot 담당). 각 플러그인 단위 테스트 통과.
-  - 버전: timekit, simple-git 0.5.4 / talk, radio, ai-feedbag, stockpulse 0.5.3 (커밋 안 됨)
+  - 버전: timekit 0.5.5, simple-git 0.5.5, talk 0.5.4, radio 0.5.5, ai-feedbag 0.5.6, stockpulse 0.5.5 (현재 manifest 기준)
   - [ ] 라이브 재시작으로 복사본 경로 확인(설치본 없을 때)
-- [x] **stockpulse 대시보드 종료 시 정리 (결정: (a) 확정)**: Claude 가 `dock-host` 로 감싸고 `finally` 에서 `release_dock_pane` 을 호출하도록 구현했다(0.5.4). pane 을 강제로 닫으면 `finally` 가 실행되지 않으므로, `reset` 을 기다리지 않고 다음 `ensure_dock_pane` 호출 때 정리한다. 이벤트 훅(b)은 하지 않는다.
+- [x] **stockpulse 대시보드 종료 시 정리 (결정: (a) 확정)**: Claude 가 `dock-host` 로 감싸고 `finally` 에서 `release_dock_pane` 을 호출하도록 구현했다(현재 0.5.5). pane 을 강제로 닫으면 `finally` 가 실행되지 않으므로, `reset` 을 기다리지 않고 다음 `ensure_dock_pane` 호출 때 정리한다. 이벤트 훅(b)은 하지 않는다.
   - 처음 확인: 강제 닫기 후 레지스트리와 표시 파일이 남았다(`wQ:p1`).
   - 다음 `ensure` 확인 1: 레지스트리 항목은 `_reconcile_registry` 가 지웠지만 **표시 파일(`herdr-stockpulse.dock`)은 남았다**. 레지스트리만 정리하고 표시 파일은 정리하지 않던 공용 모듈 문제였다.
   - 수정(grid 0.7.1): `_remove_dead_markers` 를 추가했다. `ensure_dock_pane` 과 `reconcile_dock_state` 에서 pane 이 없는 표시 파일을 지운다. 단, 10초 안에 만들어진 표시 파일은 두어서, 옛 복사본이 pane 을 막 나눈 직후의 경쟁을 피한다. dock 워크스페이스에 pane 이 하나도 없으면 아무것도 지우지 않는다. 단위 테스트 1개 추가(19개 통과).

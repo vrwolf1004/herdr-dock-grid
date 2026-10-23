@@ -65,3 +65,40 @@
 - [ ] 존재하지 않거나 다른 워크스페이스에 속한 pane ID는 재사용하지 않는다.
 - [ ] 사용자 조정 레이아웃이 재시작과 레이아웃 마이그레이션 뒤에도 보존된다.
 - [ ] 이전한 모든 플러그인이 기존 단위 테스트와 실제 `herdr plugin action invoke` 점검을 통과한다.
+
+## 개선 제안 (2026-10-23)
+
+공용 모듈이므로 항목은 공용 동작 중심이다. 복사본을 쓰는 플러그인은 일곱 저장소(simple-git, timekit, talk, radio, ai-feedbag, stockpulse, tetris)다.
+
+### 1. 공용 herdr CLI 호출에 제한 시간이 없음 (우선순위 높음)
+
+- **현상**: `herdr_api.cli()` 의 `subprocess.run` 에 `timeout` 이 없다(`src/herdr_api.py:40-49`). herdr 가 응답하지 않으면 호출이 끝나지 않는다. 같은 코드가 일곱 저장소의 `src/herdr_api.py` 복사본에 있다.
+- **개선안**: 제한 시간을 두고 시간 초과를 `HerdrError` 로 바꿔 호출자가 실패로 처리하게 한다. 원본을 먼저 고치고 복사본을 맞춘다.
+- **범위**: `src/herdr_api.py` (`cli`), 각 플러그인 `src/herdr_api.py` 복사본
+- **확인**: `HERDR_BIN_PATH` 로 응답하지 않는 가짜 실행 파일을 지정해 정해진 시간 뒤 오류가 나는지 본다. 실행하지 않았다(확인 필요).
+
+### 2. 레지스트리 잠금을 잡은 채 herdr 를 호출함
+
+- **현상**: `ensure_dock_pane` 은 `registry_lock` 안에서 `dock_workspaces()` 등 herdr CLI 를 부른다(`src/dock_layout.py:469-476`). `list_docks` 도 잠금 안에서 워크스페이스 목록을 읽는다(`:543-548`). 잠금을 5초 안에 못 잡으면 `timed out waiting for the dock registry lock` 으로 실패한다(`:153-172`). herdr 호출 하나가 느리면 다른 도크 플러그인이 모두 이 오류를 받는다.
+- **개선안**: herdr 에서 워크스페이스와 pane 목록을 잠금 밖에서 읽고, 잠금 안에서는 레지스트리 파일만 고친다. 잠금 뒤에 목록이 바뀌었는지 다시 확인한다.
+- **범위**: `src/dock_layout.py` (`ensure_dock_pane`, `list_docks`, `reset_dock_state`)
+- **확인**: 잠금을 쥔 상태에서 herdr 호출을 지연시킨 뒤 다른 플러그인의 `ensure_dock_pane` 이 실패하는지 본다. 실행하지 않았다(확인 필요).
+→ 부분 완료: 보고와 스냅샷 조회는 잠금 밖에서 herdr 를 부른다. 배정·초기화·정리는 같은 순간의 목록이 필요해서 잠금 안에서 부른다 (의도).
+→ 의도된 설계: 배정·초기화·정리는 잠금 안에서 herdr 를 부르는 것이 맞다 (같은 순간의 목록이 필요하므로). 이 항목의 남은 개선은 보고와 스냅샷 조회에 한정된다.
+→ 완료 (의도된 설계 포함): 보고와 스냅샷 조회는 잠금 밖에서 부른다. 배정·초기화·정리는 같은 순간의 목록이 필요해서 잠금 안에서 부른다 (의도).
+
+### 3. 아무도 부르지 않는 `wait_for_earlier` 가 남아 있음
+
+- **현상**: `wait_for_earlier` 는 "플러그인이 부를 수 있도록 남긴 레거시 진입점"이라고 적혀 있다(`src/dock_layout.py:87-92`). 저장소 안에서는 테스트만 부른다(`tests/test_dock_layout.py:203-206`). 일곱 저장소의 `src/` 에서도 호출이 없다(`grep` 으로 정의만 확인).
+- **개선안**: 설치본을 쓰는 외부 플러그인이 없는지 확인한 뒤 함수와 테스트를 지운다. 공용 API 목록 테스트(`tests/test_dock_layout.py:194`)에서도 뺀다.
+- **범위**: `src/dock_layout.py`, `tests/test_dock_layout.py`, 각 플러그인 복사본
+- **확인**: 각 플러그인 `src/` 에서 `wait_for_earlier(` 검색 결과가 0건인지 본다. 외부 사용은 확인 필요.
+→ 완료: `wait_for_earlier` 를 지웠다 (호출자 없음 확인). 복사본 동기화는 원본 확정 뒤 따로 한다.
+
+### 4. 복사본이 원본과 같은지 자동으로 확인하는 방법이 없음
+
+- **현상**: 일곱 저장소의 `dock_layout.py`, `herdr_api.py` 복사본이 원본과 같은지는 지금까지 사람이 `diff` 로 확인했다(각 저장소 `docs/improvements.md` 의 "diff 확인" 문구). 자동 확인은 stockpulse 의 `tools/sync_dock_intro.py` 와 `tests/test_intro_sync.py` 가 소개 칸 파일에만 있다.
+- **개선안**: 이 저장소에 복사본 목록을 두고, 원본과 다르면 실패하는 확인 스크립트를 만든다. 각 플러그인 테스트에서 이 스크립트를 부를지 정한다.
+- **범위**: `tools/` (새 파일), 각 플러그인 `tests/`
+- **확인**: 복사본 한 파일의 한 줄을 임시로 바꾼 뒤 확인 스크립트가 실패하는지 본다. 바꾼 내용은 되돌린다.
+→ 완료: tools/check_copies.py 로 복사본과 원본을 비교한다 (같으면 0, 다르면 1). 각 플러그인 테스트에서 부를지는 아직 정하지 않았다.

@@ -5,7 +5,7 @@
 ## 바꿀 것
 옛 방식은 플러그인마다 아래를 직접 호출하고 자체 `pane.id` 파일을 둔다.
 
-- `wait_for_earlier`, `write_dock_marker`, `claimed_dock_panes`, `grid_split`
+- `write_dock_marker`, `claimed_dock_panes`, `grid_split`
 
 이를 한 번의 호출로 바꾼다.
 
@@ -21,7 +21,7 @@ workspace_id, pane_id = dock.ensure_dock_pane(DOCK_KEY, cwd)
 ## 호환 규칙
 - 마커(`<key>.dock`)가 기준이다. 레지스트리는 마커에서 다시 만들 수 있는 보조 색인이다.
 - 키는 `herdr-<이름>` 이다. 예외로 simple-git 의 키는 `herdr-simple-git` 이고 herdr 플러그인 ID 는 `local.simple-git` 이다.
-- 이전 전 플러그인과 이전 후 플러그인이 함께 떠도 자리가 겹치지 않는다. `wait_for_earlier` 는 호환용으로 남아 있다.
+- 이전 전 플러그인과 이전 후 플러그인이 함께 떠도 자리가 겹치지 않는다. `wait_for_earlier` 는 호출자가 없어 지웠다.
 - 복사본 `src/dock_layout.py`, `src/herdr_api.py` 는 설치본이 없을 때의 대비용이므로 설치본 경로 탐색(`installed_plugin_path`)이 확인된 뒤에만 지운다. 복사본의 `DOCK_ORDER` 에 없는 키는 옛 복사본에서 오류가 난다.
 
 ## 순서
