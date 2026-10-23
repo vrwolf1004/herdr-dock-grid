@@ -5,6 +5,14 @@ min_herdr_version = "0.9.0"
 platforms = ["windows", "linux", "macos"]
 description = "Shared 2x2 pane grid and slot rules for the herdr-dock workspace used by herdr plugins"
 
+[[startup]]
+platforms = ["linux", "macos"]
+command = ["python3", "-X", "utf8", "src/dock_cli.py", "reset"]
+
+[[startup]]
+platforms = ["windows"]
+command = ["python", "-X", "utf8", "src/dock_cli.py", "reset"]
+
 [[actions]]
 id = "list"
 title = "dock: list docks"
